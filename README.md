@@ -1,4 +1,4 @@
-# DAISY
+# Mechanism of action and resistance to Trastuzumab Deruxtecan in patients with metastatic breast cancer: the DAISY trial
 > Study of DS-8201a, an Antibody Drug Conjugate for Advanced Breast Cancer Patients, With Biomarkers Analysis
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
@@ -9,20 +9,14 @@ at assessing the efficacy of DS-8201a (Trastuzumab deruxtecan)  monotherapy in p
 
 ## Repository organisation
 
-## pipelines
+## data
 
-This folder hosts the bioinformatics pipelines that were used to run  bioinformatics analyses for the project. In short,
+This folder contains instructions and documents to be signed to get access to the data. Please see `data/README.md` for
+more details.
 
-- `wes` a Snakemake pipeline. It performs a comprehensive analysis of WES data in order to identify, filter, and
-  annotate somatic mutations, copy-number alterations, purity and ploidy in each pair of tumor/normal. It may also run
-  in tumor-only mode for most all analyses. See `code/pipelines/wes/README.md` for more details.
+## code
 
-## scripts
-
-This folder gather all the scripts that were used to perform the analysis, extract the numbers, and draw the figures
-that underlie the paper. Each analysis is organised in a subfolder using a structure similar to that of the
-`code/pipelines/wes` pipeline. The code is organized and made easily runnable through Snakemake. See
-`code/scripts/REAMDE.md` for more details.
+Contains all the code supporting the analyses presented in the paper. See `code/README.md` for more details.
 
 # Contributors
 
