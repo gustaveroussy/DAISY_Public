@@ -22,15 +22,3 @@ data:
     alterations_best: ../../../results/wes/alterations/aggregated_alterations_best.tsv
     alterations_all: ../../../results/wes/alterations/aggregated_alterations_all.tsv
     alterations: ../../../results/wes/alterations/aggregated_alterations.tsv
-
-
-heatmap_all:
-  sensitivity:
-    barplot_height: 250
-    width: 250
-    height: 850
-
-  resistance:
-    barplot_height: 299
-    width: 300
-    height: 537
