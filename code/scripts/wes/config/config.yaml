@@ -19,9 +19,9 @@ data:
     sam_used: ../../../data/cln/curated/summary_samples_used.xlsx
 
   outputs:
-    alterations_best: ../../../results/combined_alterations/alterations/aggregated_alterations_best.tsv
-    alterations_all: ../../../results/combined_alterations/alterations/aggregated_alterations_all.tsv
-    alterations: ../../../results/combined_alterations/alterations/aggregated_alterations.tsv
+    alterations_best: ../../../results/wes/alterations/aggregated_alterations_best.tsv
+    alterations_all: ../../../results/wes/alterations/aggregated_alterations_all.tsv
+    alterations: ../../../results/wes/alterations/aggregated_alterations.tsv
 
 
 heatmap_all:

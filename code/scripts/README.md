@@ -3,7 +3,7 @@
 The code for each separate part of the analysis is located in the folders listed below along with a brief description of
 the analysis performed in each folder.
 
-- `combined_alterations`
+- `wes`
     - Contains scripts for preparing table that combine driver point mutations, small indels, and focal CNAs.
     - Hosts the code for drawing Fig. 4A, Fig. 4B.
 - `common`
