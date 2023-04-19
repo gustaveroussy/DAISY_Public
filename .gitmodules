@@ -1,0 +1,3 @@
+[submodule "code/scripts/common/external/comut"]
+	path = code/scripts/common/external/comut
+	url = https://github.com/ypradat/comut
