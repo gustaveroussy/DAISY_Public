@@ -233,7 +233,7 @@ def combine_all_alterations(alt, cln, cna, mut, col_gen, col_alt, col_alt_det, c
 
     # select only samples that pass QC unless specified otherwise by the user
     if select_keep_cln:
-        df_cln = df_cln.loc[df_cln["Keep"]==1]
+        df_cln = df_cln.loc[df_cln["QC_Final_Decision"]==1]
 
     # select samples
     mask_t1 = df_cln["Sample_Id_DNA_T"].str.endswith("T1").fillna(False)

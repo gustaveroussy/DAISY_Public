@@ -428,7 +428,7 @@ main <- function(args){
   df_mut <- load_table(args$mut, guess_max=1e5)
 
   # select samples
-  df_cln <- df_cln %>% filter(WES_somatic_cna==1, WES_somatic_maf==1, Keep==1)
+  df_cln <- df_cln %>% filter(WES_somatic_cna==1, WES_somatic_maf==1, QC_Final_Decision==1)
   cat(paste("-INFO: selected", nrow(df_cln), "tumor/normal or tumor/NA pairs for analysis\n"))
   df_cna <- select_samples(df_cna, df_cln)
   df_cna_pass <- select_samples(df_cna_pass, df_cln)
