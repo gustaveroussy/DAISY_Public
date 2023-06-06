@@ -352,11 +352,12 @@ get_alteration <- function(df_agg){
                              paste("Exon", gsub(regex,"",EXON,perl=T), "Ins"), Alteration)) %>%
     mutate(Alteration=ifelse(is.na(Alteration)&ALTERATION_CATEGORY=="Del",
                              paste("Exon", gsub(regex,"",EXON,perl=T), "Del"), Alteration)) %>%
-    mutate(Alteration_Detail=ifelse(ALTERATION_CATEGORY=="Ins",gsub("^p.","",PROTEIN_CHANGE),NA)) %>%
-    mutate(Alteration_Detail=ifelse(ALTERATION_CATEGORY=="Del",gsub("^p.","",PROTEIN_CHANGE),Alteration_Detail)) %>%
+    mutate(Alteration_Detail=ifelse(ALTERATION_CATEGORY %in% c("Mut", "Del", "Ins"),
+                                                              gsub("^p.","",PROTEIN_CHANGE),NA)) %>%
+    mutate(Alteration_Detail=ifelse(is.na(Alteration_Detail) & (ALTERATION_CATEGORY %in% c("Mut", "Del", "Ins")),
+                                                              SEQUENCE_CHANGE_CHANGE,Alteration_Detail)) %>%
     mutate(Alteration_Detail=ifelse(!is.na(COPY_NUMBER_MORE), COPY_NUMBER_MORE, Alteration_Detail)) %>%
     mutate(Alteration=ifelse(!is.na(PROTEIN_CHANGE_MORE), PROTEIN_CHANGE_MORE, Alteration)) %>%
-    mutate(Alteration_Detail=ifelse(!is.na(PROTEIN_CHANGE_MORE), gsub("^p.","",PROTEIN_CHANGE), Alteration_Detail)) %>%
     mutate(Alteration=ifelse(!is.na(Alteration), gsub("\\/","",Alteration,perl=T), NA)) %>%
     mutate(Alteration=ifelse(is.na(Alteration), Variant_Classification, Alteration)) %>%
     mutate(HUGO_SYMBOL=ifelse(ALTERATION_CATEGORY=="Fusion", FUSION, HUGO_SYMBOL)) %>% 
@@ -408,6 +409,7 @@ union_drugs <- function(vals){
   }
 }
 
+
 save_table <- function(table, output){
   if (grepl(".gz$", output)){
     write.table(table, file=gsub(".gz$", "", output), sep="\t", quote=F, row.names=F, na="")
@@ -449,7 +451,7 @@ main <- function(args){
   # process mutations:
   # - where TP53, replace PROTEIN_CHANGE by DNA Binding Domain where applicable
   df_mut <- df_mut %>% rowwise %>% mutate(ALTERATION_CATEGORY=get_alteration_category_mut(Variant_Classification)) %>%
-    rename(SAMPLE_ID=Tumor_Sample_Barcode, HUGO_SYMBOL=Hugo_Symbol, PROTEIN_CHANGE=HGVSp_Short)
+    rename(SAMPLE_ID=Tumor_Sample_Barcode, HUGO_SYMBOL=Hugo_Symbol, PROTEIN_CHANGE=HGVSp_Short, SEQUENCE_CHANGE=HGVSc)
   df_mut[["PROTEIN_CHANGE"]] <- gsub("%3D", "=", df_mut[["PROTEIN_CHANGE"]])
   mask_tp53 <- df_mut[["HUGO_SYMBOL"]]=="TP53"
   mask_dnabd <- (df_mut$Start_Position >= 7577149) & (df_mut$End_Position <- 7578443)

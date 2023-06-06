@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 @created: May 03 2022
-@modified: Feb 15 2023
+@modified: Jun 06 2023
 @author: Yoann Pradat
 
     CentraleSupelec
@@ -12,7 +12,7 @@
     Prism Center
     114 rue Edouard Vaillant, Villejuif, 94800 France
 
-Oncoplot-like figure detailing all alterations of a pair of samples.
+Oncoplot-like figure detailing all alterations of paired tumor samples.
 """
 
 import argparse
@@ -28,7 +28,6 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 
 # comut
-import palettable
 from comut import comut
 
 # utils
@@ -37,16 +36,24 @@ from utils import combine_all_alterations, combine_tcga_alterations
 from utils_comut import add_clinical_benefit_plot, get_ordered_alterations_and_samples, add_vaf_for_mutations
 from utils_comut import get_tables, get_mappings, draw_comut_plot
 
+def add_cohort(df, df_sam, col_sam_id, col_sam_wes_id):
+    if "Cohort" in df:
+        del df["Cohort"]
+    df_sam_wes = df_sam[[col_sam_wes_id, "Cohort"]].dropna(subset=[col_sam_wes_id])
+    df_sam_wes = df_sam_wes.rename(columns={col_sam_wes_id: col_sam_id})
+    return df.merge(df_sam_wes, how="left", on=col_sam_id)
+
+
 def select_alterations_t2_vs_t1(df_alt, subs_all, col_sub_id, col_sam_id, col_gen, col_alt, col_alt_det, col_t_vaf,
-                                col_inc, t_vaf_inc_thresh):
+                                col_inc, t_vaf_inc_thresh, cohort_t1="DAISY Pre-treatment",
+                                cohort_t2="DAISY Post-treatment"):
     # select alterations in t2 not in t1
+    assert df_alt["Cohort"].isnull().sum()==0
     dfs_alt_t2_vs_t1 = []
     for sub in subs_all:
         df_alt_sub = df_alt.loc[df_alt[col_sub_id]==sub].copy()
-        df_alt_sub_t1 = df_alt_sub.loc[df_alt_sub["Cohort"]=="DAISY Pre-treatment"].copy()
-        df_alt_sub_t2 = df_alt_sub.loc[df_alt_sub["Cohort"]=="DAISY Post-treatment"].copy()
-        # df_alt_sub_t1 = df_alt_sub.loc[df_alt_sub[col_sam_id].str.endswith("T1")].copy()
-        # df_alt_sub_t2 = df_alt_sub.loc[df_alt_sub[col_sam_id].str.endswith("T2")].copy()
+        df_alt_sub_t1 = df_alt_sub.loc[df_alt_sub["Cohort"]==cohort_t1].copy()
+        df_alt_sub_t2 = df_alt_sub.loc[df_alt_sub["Cohort"]==cohort_t2].copy()
 
         # identify alterations in t2 but not in t1
         alt_t2_vs_t1 = list(set(df_alt_sub_t2[col_alt]).difference(set(df_alt_sub_t1[col_alt])))
@@ -144,7 +151,7 @@ def select_alterations_and_level(df_alt, cat_ign, alt_lvl, col_sam_id, col_alt_c
 
 
 def select_repeated_alterations(df_alt, col_sam_id, col_alt_cat, col_alt, col_inc, col_t_vaf, name_t_vaf_inc,
-                                col_isin_t2=None):
+                                col_isin_t1t2=None):
     priority_inc = ["Yes", "No"]
     priority_isin_t2 = ["Yes", "No"]
     priority_clf = ["Mutation", "Indel", "Amplification", "Deletion"]
@@ -175,9 +182,9 @@ def select_repeated_alterations(df_alt, col_sam_id, col_alt_cat, col_alt, col_in
         df_alt_a = pd.concat((df_alt_a_1, df_alt_a_2, df_alt_a_3))
 
     # in alterations with duplicates, select the alteration that will be displayed
-    if col_isin_t2 is not None:
-        df_alt_b[col_isin_t2] = pd.Categorical(df_alt_b[col_isin_t2], priority_isin_t2[::-1])
-        cols_sort_b = [col_sam_id, col_alt, col_isin_t2, col_alt_cat, col_t_vaf]
+    if col_isin_t1t2 is not None:
+        df_alt_b[col_isin_t1t2] = pd.Categorical(df_alt_b[col_isin_t1t2], priority_isin_t2[::-1])
+        cols_sort_b = [col_sam_id, col_alt, col_isin_t1t2, col_alt_cat, col_t_vaf]
     else:
         cols_sort_b = [col_sam_id, col_alt, col_alt_cat, col_t_vaf]
     df_alt_b = df_alt_b.sort_values(by=cols_sort_b, ascending=False)
@@ -208,12 +215,11 @@ def select_repeated_alterations(df_alt, col_sam_id, col_alt_cat, col_alt, col_in
 
 def main(args):
     # define util variable names
-    col_lvl = "Sen_Level_Simple"
-    col_gen = "Hugo_Symbol_%s" % col_lvl
+    col_gen = "Hugo_Symbol"
     col_pth = "Pathway_Name"
-    col_alt = "Alteration_%s" % col_lvl
+    col_alt = "Alterations"
     col_alt_cat = "Alteration_Category"
-    col_alt_det = "Alteration"
+    col_alt_det = "Alteration_Detail"
     col_sub_id = "Subject_Id"
     col_sam_id = "Sample_Id"
     col_t_vaf = "t_vaf"
@@ -228,31 +234,43 @@ def main(args):
     # load data for subjects with both t1 and t2 samples
     df_alt, df_cln = combine_all_alterations(alt=args.alt, cln=args.cln, cna=args.cna, mut=args.mut, col_gen=col_gen,
                                              col_alt=col_alt, col_alt_det=col_alt_det, col_alt_cat=col_alt_cat,
-                                             col_lvl=col_lvl, col_sub_id=col_sub_id, col_sam_id=col_sam_id, subs=None,
-                                             samples_select="t1t2", keep_alt_det=True)
+                                             col_sub_id=col_sub_id, col_sam_id=col_sam_id, subs=None,
+                                             samples_select="t1t2", keep_alt_det=True, cna_selection="focal_high_level")
 
     # load data for all samples
     df_alt_all, df_cln_all = combine_all_alterations(alt=args.alt, cln=args.cln, cna=args.cna, mut=args.mut,
                                                      col_gen=col_gen, col_alt=col_alt, col_alt_det=col_alt_det,
-                                                     col_alt_cat=col_alt_cat, col_lvl=col_lvl,
-                                                     col_sub_id=col_sub_id, col_sam_id=col_sam_id, subs=None,
-                                                     samples_select="all", keep_alt_det=True)
+                                                     col_alt_cat=col_alt_cat, col_sub_id=col_sub_id,
+                                                     col_sam_id=col_sam_id, subs=None, samples_select="all",
+                                                     keep_alt_det=True, cna_selection="focal_high_level")
+
+    # add Cohort
+    cohort_t1 = "DAISY Pre-treatment"
+    cohort_t2 = "DAISY Post-treatment"
+
+    col_sam_wes_id = "Sample_Id_WES"
+    df_sam = pd.read_excel(args.sam)
+    df_sam = df_sam.loc[df_sam["Used_In_WES_Analyses"]=="YES"]
+    df_sam["Cohort"] = np.nan
+    df_sam.loc[df_sam[col_sam_wes_id].str.endswith("T1"), "Cohort"] = cohort_t1
+    df_sam.loc[df_sam[col_sam_wes_id].str.endswith("T2"), "Cohort"] = cohort_t2
+
+    df_alt = add_cohort(df_alt, df_sam, col_sam_id, col_sam_wes_id)
+    df_cln = add_cohort(df_cln, df_sam, col_sam_id, col_sam_wes_id)
+    df_alt_all = add_cohort(df_alt_all, df_sam, col_sam_id, col_sam_wes_id)
+    df_cln_all = add_cohort(df_cln_all, df_sam, col_sam_id, col_sam_wes_id)
 
     # load data for tcga BRCA samples
     df_alt_tcga, df_cln_tcga = combine_tcga_alterations(cln=args.cln_tcga, cna=args.cna_tcga, mut=args.mut_tcga,
                                                         col_gen=col_gen, col_alt=col_alt, col_alt_det=col_alt_det,
-                                                        col_alt_cat=col_alt_cat, col_lvl=col_lvl,
-                                                        col_sub_id=col_sub_id, col_sam_id=col_sam_id, keep_alt_det=True)
-
-    if args.agg_mod=="v1" or args.agg_mod=="v2":
-        t_vaf_inc_thresh = 0.2
-    elif args.agg_mod=="v3":
-        t_vaf_inc_thresh = 1
+                                                        col_alt_cat=col_alt_cat, col_sub_id=col_sub_id,
+                                                        col_sam_id=col_sam_id, keep_alt_det=True,
+                                                        cna_selection="focal_high_level")
 
     if font_mode=="tex":
-        name_t_vaf_inc = 'VAF increase $>$ %.2g' % (t_vaf_inc_thresh)
+        name_t_vaf_inc = 'VAF increase $>$ %.2g' % args.vaf_inc
     else:
-        name_t_vaf_inc = 'VAF increase > %.2g' % (t_vaf_inc_thresh)
+        name_t_vaf_inc = 'VAF increase > %.2g' % args.vaf_inc
 
     borders = ['Additional Mutation', 'Additional Indel', 'Additional Deletion', 'Additional Amplification',
                name_t_vaf_inc]
@@ -265,8 +283,8 @@ def main(args):
                                               col_sam_id=col_sam_id, col_alt_cat=col_alt_cat, col_alt=col_alt,
                                               col_gen=col_gen, col_pth=col_pth, pth=args.pth)
 
-    sams_t1 = df_cln.loc[(df_cln["Cohort"]=="DAISY Pre-treatment")][col_sam_id].tolist()
-    sams_t2 = df_cln.loc[(df_cln["Cohort"]=="DAISY Post-treatment")][col_sam_id].tolist()
+    sams_t1 = df_cln.loc[(df_cln["Cohort"]==cohort_t1)][col_sam_id].tolist()
+    sams_t2 = df_cln.loc[(df_cln["Cohort"]==cohort_t2)][col_sam_id].tolist()
     subs_t1t2 = df_cln[col_sub_id].unique().tolist()
 
     if args.alt_lvl == "alt" or args.agg_mod == "v1":
@@ -274,7 +292,8 @@ def main(args):
         df_alt_t2 = select_alterations_t2_vs_t1(df_alt=df_alt, subs_all=subs_t1t2, col_sub_id=col_sub_id,
                                                 col_sam_id=col_sam_id, col_gen=col_gen, col_alt=col_alt,
                                                 col_alt_det=col_alt_det, col_t_vaf=col_t_vaf, col_inc=col_inc,
-                                                t_vaf_inc_thresh=t_vaf_inc_thresh)
+                                                t_vaf_inc_thresh=args.vaf_inc, cohort_t1=cohort_t1,
+                                                cohort_t2=cohort_t2)
 
         # remove alterations from certain categories and decide on the level of aggregation
         df_alt_t2 = select_alterations_and_level(df_alt=df_alt_t2, cat_ign=args.cat_ign, alt_lvl=args.alt_lvl,
@@ -290,7 +309,8 @@ def main(args):
         df_alt_t2 = select_alterations_t2_vs_t1(df_alt=df_alt, subs_all=subs_t1t2, col_sub_id=col_sub_id,
                                                 col_sam_id=col_sam_id, col_gen=col_gen, col_alt=col_alt,
                                                 col_alt_det=col_alt_det, col_t_vaf=col_t_vaf, col_inc=col_inc,
-                                                t_vaf_inc_thresh=t_vaf_inc_thresh)
+                                                t_vaf_inc_thresh=args.vaf_inc, cohort_t1=cohort_t1,
+                                                cohort_t2=cohort_t2)
 
 
     df_alt_all = select_alterations_and_level(df_alt=df_alt_all, cat_ign=args.cat_ign, alt_lvl=args.alt_lvl,
@@ -301,48 +321,109 @@ def main(args):
                                                col_sam_id=col_sam_id, col_alt_cat=col_alt_cat, col_alt=col_alt,
                                                col_gen=col_gen, col_pth=col_pth, pth=args.pth)
 
-    # select alterations seen in at least 2 samples 
+    # select alterations seen in at least 2 samples or 3 samples (if CNA only)
     df_alt_t2 = select_alterations_seen_recurrently(df_alt_t2, df_cln, col_sam_id, col_alt_cat, col_alt,
                                                     threshold_cna=3, threshold_oth=2)
 
-    # in case an alteration is repeated in a sample,
-    #  - select 1 alteration from a priority list
-    #  - select repeat and encode using "Additional" tag
-    #  - drop other repeats
-    df_alt_t2 = select_repeated_alterations(df_alt=df_alt_t2, col_sam_id=col_sam_id, col_alt_cat=col_alt_cat,
-                                            col_alt=col_alt, col_inc=col_inc, col_t_vaf=col_t_vaf,
-                                            name_t_vaf_inc=name_t_vaf_inc)
+    if args.sel_mod=="A":
+        #### 
+        #### METHOD A: all hits of a given alteration are shown, even hits seen in both samples
+        ####
 
-    # select alterations in t1 samples from pool of alterations in df_alt_t2
-    mask_sam_t1 = df_alt["Sample_Id"].isin(sams_t1)
-    mask_alt_t1 = df_alt[col_alt].isin(df_alt_t2[col_alt])
-    df_alt_t1 = df_alt.loc[mask_sam_t1 & mask_alt_t1].copy()
+        # select alterations for the plot from pool of alterations in df_alt_t2
+        df_alt_plot = df_alt_all.loc[df_alt_all[col_sam_id].isin(sams_t1+sams_t2)].copy()
+        mask_alt_plot = df_alt_plot[col_alt].isin(df_alt_t2[col_alt])
+        df_alt_plot = df_alt_plot.loc[mask_alt_plot].copy()
 
-    col_sub_alt = "Subject_Alt"
-    df_alt_t2[col_sub_alt] = df_alt_t2[[col_sub_id, col_alt, col_alt_det]].apply("/".join, axis=1)
-    df_alt_t1[col_sub_alt] = df_alt_t1[[col_sub_id, col_alt, col_alt_det]].apply("/".join, axis=1)
-    mask_sub_alt_t1 = df_alt_t1[col_sub_alt].isin(df_alt_t2[col_sub_alt])
-    col_isin_t2 = "Alt_In_T2"
-    df_alt_t1[col_isin_t2] = np.where(mask_sub_alt_t1, "Yes", "No")
-    df_alt_t1 = select_repeated_alterations(df_alt=df_alt_t1, col_sam_id=col_sam_id, col_alt_cat=col_alt_cat,
-                                            col_alt=col_alt, col_inc=col_inc, col_t_vaf=col_t_vaf,
-                                            name_t_vaf_inc=name_t_vaf_inc, col_isin_t2=col_isin_t2)
+        # add VAF inc column
+        col_sam_alt = "Sample_Alt"
+        df_alt_plot[col_sam_alt] = df_alt_plot[[col_sam_id, col_alt, col_alt_det]].apply("/".join, axis=1)
+        df_alt_t2[col_sam_alt] = df_alt_t2[[col_sam_id, col_alt, col_alt_det]].apply("/".join, axis=1)
+        assert df_alt_plot[col_sam_alt].nunique()==df_alt_plot.shape[0]
+        assert df_alt_t2[col_sam_alt].nunique()==df_alt_t2.shape[0]
+        df_alt_plot = df_alt_plot.merge(df_alt_t2[[col_sam_alt, col_inc]], how="left", on=col_sam_alt)
+        del df_alt_plot[col_sam_alt]
+        df_alt_plot[col_inc] = df_alt_plot[col_inc].fillna("No")
+
+        # in case an alteration is repeated in a sample,
+        #  - select 1 alteration from a priority list, prioritizing alterations seen in both T1/T2
+        #  - select repeat and encode using "Additional" tag
+        #  - drop other repeats
+
+        col_sub_alt = "Subject_Alt"
+        df_alt_plot[col_sub_alt] = df_alt_plot[[col_sub_id, col_alt, col_alt_det]].apply("/".join, axis=1)
+        df_alt_plot_t1 = df_alt_plot.loc[df_alt_plot[col_sam_id].isin(sams_t1)].copy()
+        df_alt_plot_t2 = df_alt_plot.loc[df_alt_plot[col_sam_id].isin(sams_t2)].copy()
+        sub_alt_t1t2 = list(set(df_alt_plot_t1[col_sub_alt]).intersection(set(df_alt_plot_t2[col_sub_alt])))
+
+        col_isin_t1t2 = "Alt_In_T1_T2"
+        df_alt_plot_t1[col_isin_t1t2] = "No"
+        df_alt_plot_t1.loc[df_alt_plot_t1[col_sub_alt].isin(sub_alt_t1t2), col_isin_t1t2] = "Yes"
+        df_alt_plot_t2[col_isin_t1t2] = "No"
+        df_alt_plot_t2.loc[df_alt_plot_t2[col_sub_alt].isin(sub_alt_t1t2), col_isin_t1t2] = "Yes"
+
+        df_alt_plot_t1 = select_repeated_alterations(df_alt=df_alt_plot_t1, col_sam_id=col_sam_id, col_alt_cat=col_alt_cat,
+                                                     col_alt=col_alt, col_inc=col_inc, col_t_vaf=col_t_vaf,
+                                                     name_t_vaf_inc=name_t_vaf_inc, col_isin_t1t2=col_isin_t1t2)
+
+        df_alt_plot_t2 = select_repeated_alterations(df_alt=df_alt_plot_t2, col_sam_id=col_sam_id, col_alt_cat=col_alt_cat,
+                                                     col_alt=col_alt, col_inc=col_inc, col_t_vaf=col_t_vaf,
+                                                     name_t_vaf_inc=name_t_vaf_inc, col_isin_t1t2=col_isin_t1t2)
+
+    elif args.sel_mod=="B":
+        ####
+        #### METHOD B: only acquired or lost hits of a given alteration are shown
+        ####
+
+        # in case an alteration is repeated in a sample,
+        #  - select 1 alteration from a priority list
+        #  - select repeat and encode using "Additional" tag
+        #  - drop other repeats
+        df_alt_plot_t2 = select_repeated_alterations(df_alt=df_alt_t2, col_sam_id=col_sam_id, col_alt_cat=col_alt_cat,
+                                                     col_alt=col_alt, col_inc=col_inc, col_t_vaf=col_t_vaf,
+                                                     name_t_vaf_inc=name_t_vaf_inc)
+
+        # select alterations in t1 samples from pool of alterations in df_alt_t2
+        mask_sam_t1 = df_alt["Sample_Id"].isin(sams_t1)
+        mask_alt_t1 = df_alt[col_alt].isin(df_alt_plot_t2[col_alt])
+        df_alt_plot_t1 = df_alt.loc[mask_sam_t1 & mask_alt_t1].copy()
+
+        col_sub_alt = "Subject_Alt"
+        df_alt_plot_t2[col_sub_alt] = df_alt_plot_t2[[col_sub_id, col_alt, col_alt_det]].apply("/".join, axis=1)
+        df_alt_plot_t1[col_sub_alt] = df_alt_plot_t1[[col_sub_id, col_alt, col_alt_det]].apply("/".join, axis=1)
+        mask_sub_alt_t1 = df_alt_plot_t1[col_sub_alt].isin(df_alt_plot_t2[col_sub_alt])
+        col_isin_t1t2 = "Alt_In_T1_T2"
+        df_alt_plot_t1[col_isin_t1t2] = np.where(mask_sub_alt_t1, "Yes", "No")
+        df_alt_plot_t1 = select_repeated_alterations(df_alt=df_alt_plot_t1, col_sam_id=col_sam_id,
+                                                     col_alt_cat=col_alt_cat, col_alt=col_alt, col_inc=col_inc,
+                                                     col_t_vaf=col_t_vaf, name_t_vaf_inc=name_t_vaf_inc,
+                                                     col_isin_t1t2=col_isin_t1t2)
+    else:
+        raise ValueError("Unsupported value '%s' for sel_mod. Choose 'A' or 'B'." % args.sel_mod)
 
     # if mode v3, remove alterations seen at least once in t1
     if args.agg_mod=="v3":
-        mask_alt_t2_rmv = df_alt_t2[col_alt].isin(df_alt_t1[col_alt])
-        df_alt_t2 = df_alt_t2.loc[~mask_alt_t2_rmv].copy()
+        mask_alt_t2_rmv = df_alt_plot_t2[col_alt].isin(df_alt_plot_t1[col_alt])
+        df_alt_plot_t2 = df_alt_plot_t2.loc[~mask_alt_t2_rmv].copy()
 
-    # select alterations in all samples from pool of alterations in df_alt_t2
-    mask_alt_all = df_alt_all[col_alt].isin(df_alt_t2[col_alt])
+    # combine alterations in T1 and T2 samples
+    if args.agg_mod=="v1":
+        df_alt_plot = df_alt_plot_t2
+    elif args.agg_mod=="v2":
+        df_alt_plot = pd.concat((df_alt_plot_t2, df_alt_plot_t1))
+    elif args.agg_mod=="v3":
+        df_alt_plot = df_alt_plot_t2
+
+    # select alterations in all samples from pool of alterations in df_alt_plot
+    mask_alt_all = df_alt_all[col_alt].isin(df_alt_plot[col_alt])
     df_alt_all = df_alt_all.loc[mask_alt_all].copy()
     df_alt_all = select_repeated_alterations(df_alt=df_alt_all, col_sam_id=col_sam_id, col_alt_cat=col_alt_cat,
                                              col_alt=col_alt, col_inc=col_inc, col_t_vaf=col_t_vaf,
                                              name_t_vaf_inc=name_t_vaf_inc)
 
 
-    # select alterations in tcga samples from pool of alterations in df_alt_t2
-    mask_alt_tcga = df_alt_tcga[col_alt].isin(df_alt_t2[col_alt])
+    # select alterations in tcga samples from pool of alterations in df_alt_plot
+    mask_alt_tcga = df_alt_tcga[col_alt].isin(df_alt_plot[col_alt])
     df_alt_tcga = df_alt_tcga.loc[mask_alt_tcga].copy()
     df_alt_tcga = select_repeated_alterations(df_alt=df_alt_tcga, col_sam_id=col_sam_id, col_alt_cat=col_alt_cat,
                                              col_alt=col_alt, col_inc=col_inc, col_t_vaf=col_t_vaf,
@@ -352,18 +433,10 @@ def main(args):
     df_alt_tcga["Cohort"] = "TCGA-BRCA"
     df_cln_tcga["Cohort"] = "TCGA-BRCA"
 
-    # combine alterations in T1 and T2 samples
-    if args.agg_mod=="v1":
-        df_alt = df_alt_t2
-    elif args.agg_mod=="v2":
-        df_alt = pd.concat((df_alt_t2, df_alt_t1))
-    elif args.agg_mod=="v3":
-        df_alt = df_alt_t2
-
     # add rows with VAF category for col_alt_cat in order to represent the VAF in the oncoplot
-    df_alt, t_vaf_labs = add_vaf_for_mutations(df_alt=df_alt, df_cln=df_cln, col_sub_id=col_sub_id,
-                                               col_sam_id=col_sam_id, col_alt=col_alt, col_alt_det=col_alt_det,
-                                               col_alt_cat=col_alt_cat, col_t_vaf=col_t_vaf, mode=font_mode)
+    df_alt_plot, t_vaf_labs = add_vaf_for_mutations(df_alt=df_alt_plot, df_cln=df_cln, col_sub_id=col_sub_id,
+                                                    col_sam_id=col_sam_id, col_alt=col_alt, col_alt_det=col_alt_det,
+                                                    col_alt_cat=col_alt_cat, col_t_vaf=col_t_vaf, mode=font_mode)
 
     # parameters for the plot 
     cols_comut = ["sample", "category", "value"]
@@ -377,9 +450,10 @@ def main(args):
     df_cln["Clinical_Benefit_Plot"] = pd.Categorical(df_cln["Clinical_Benefit_Plot"], categories_benefit)
     df_cln = df_cln.sort_values(by=["Clinical_Benefit_Plot", "HER2_Cohort"])
 
-    alts_ordered = sorted(df_alt[col_alt].unique().tolist())[::-1]
-    sams_t1_ordered = df_cln.loc[df_cln["Cohort"]=="DAISY Pre-treatment"][col_sam_id].tolist()
-    sams_t2_ordered = df_cln.loc[df_cln["Cohort"]=="DAISY Post-treatment"][col_sam_id].tolist()
+    alts_ordered = sorted(df_alt_plot[col_alt].unique().tolist())[::-1]
+    sams_t1_ordered = df_cln.loc[df_cln["Cohort"]==cohort_t1][col_sam_id].tolist()
+    sams_t2_ordered = df_cln.loc[df_cln["Cohort"]==cohort_t2][col_sam_id].tolist()
+    sams_ordered = sams_t2_ordered + sams_t1_ordered
 
     if args.agg_mod=="v1":
         sams_ordered = sams_t2_ordered
@@ -388,7 +462,7 @@ def main(args):
 
     # subset tables
     df_cln = df_cln.loc[df_cln[col_sam_id].isin(sams_ordered)].copy()
-    df_alt = df_alt.loc[df_alt[col_sam_id].isin(sams_ordered)].copy()
+    df_alt_plot = df_alt_plot.loc[df_alt_plot[col_sam_id].isin(sams_ordered)].copy()
     df_alt_top = df_alt_top.loc[df_alt_top[col_sam_id].isin(sams_ordered)].copy()
 
     # create tables for side bar
@@ -399,7 +473,7 @@ def main(args):
     categorical_data = ["bpn", "her2", "ben", "mtc"]
     categorical_names = ["Cohort", "HER2 Cohort", "ORR", "Matched DNA"]
     categorical_pairs = {d: n for d,n in zip(categorical_data, categorical_names)}
-    dfs_data = get_tables(df_cln=df_cln, df_alt=df_alt, col_alt=col_alt, col_alt_cat=col_alt_cat, col_sub_id=col_sub_id,
+    dfs_data = get_tables(df_cln=df_cln, df_alt=df_alt_plot, col_alt=col_alt, col_alt_cat=col_alt_cat, col_sub_id=col_sub_id,
                           col_sam_id=col_sam_id, alts_ordered=alts_ordered, df_alt_top=df_alt_top,
                           df_alt_side=df_alt_side, df_cln_side=df_cln_side, categorical_pairs=categorical_pairs)
     mappings = get_mappings(t_vaf_labs=t_vaf_labs, name_t_vaf_inc=name_t_vaf_inc, borders=borders)
@@ -458,10 +532,17 @@ if __name__ == "__main__":
     parser.add_argument('--pth', type=str, help='Path to table of all pathways.')
     parser.add_argument('--cat_ign', type=str, nargs="*", help='List of alterations categories to be ignored',
                         default=[])
-    parser.add_argument('--alt_lvl', type=str, help='Level to which alterations are aggregated.')
+    parser.add_argument('--alt_lvl', type=str, help='Level to which alterations are aggregated.',
+                        default="gen")
     parser.add_argument('--agg_mod', type=str, help='Mode of aggregation if alt_lvl is not "alt"',
-                        default="v3")
-    parser.add_argument('--output', type=str,  help='Paths to output oncoplot-like.')
+                        default="v2")
+    parser.add_argument("--sel_mod", type=str,
+                        help="Choose A for showing all hits, B for showing only differential hits.",
+                        default="B")
+    parser.add_argument("--vaf_inc", type=float,
+                        help="Mutations with a VAF increase greater than this value will be treated as if acquired.",
+                        default=0.2)
+    parser.add_argument('--output', type=str,  help='Paths to output oncoplot-like.',
     args = parser.parse_args()
 
     for arg in vars(args):

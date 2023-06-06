@@ -25,7 +25,6 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 
 # comut
-import palettable
 from comut import comut
 
 # matplotlib
@@ -294,7 +293,7 @@ def get_tables(df_cln, df_alt, col_alt, col_alt_cat, col_sub_id, col_sam_id, alt
 
     # dataframe for side barplot
     if df_alt_side is None:
-        df_alt_side = df_alt_no_vaf_inplot
+        df_alt_side = df_alt_no_vaf_inplot[[col_sam_id, col_alt, col_side_barplot]].drop_duplicates()
     if df_cln_side is None:
         df_cln_side = df_cln
     df_cnt = df_alt_side.groupby([col_alt, col_side_barplot]).size().unstack(level=-1)
@@ -330,6 +329,7 @@ def get_mappings(t_vaf_labs, name_t_vaf_inc=None, borders=[], darkgrey_frq=False
                        "Amplification": "#D81159",
                        "Deletion": "#0496FF",
                        "Multiple": "#BC8034",
+                       "CNA_Other": "#EDE6F2",
                        "Additional Mutation": {'facecolor':'none', 'edgecolor':'#BC8034', 'linewidth': 3},
                        "Additional Indel": {'facecolor':'none', 'edgecolor':'#362023', 'linewidth': 3},
                        "Additional Deletion": {'facecolor':'none', 'edgecolor':'#247BA0', 'linewidth': 3},
@@ -430,10 +430,15 @@ def add_vaf_for_mutations(df_alt, df_cln, col_sub_id, col_sam_id, col_alt, col_a
     # create column col_alt_cat that will be the basis for the colors of the oncoplot
     # in order to allow a double annotation of VAF category and alteration identity for mutations,
     # add artificial rows where col_alt_cat will the rows
-    t_vaf_bins = [0.05-1e-5, 0.1, 0.2, 0.3, 0.4, 0.5, 1+ 1e-5]
+    t_vaf_bins = [0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 1+ 1e-5]
     t_vaf_labs = []
     for i, t_vaf_bin in enumerate(t_vaf_bins[:-1]):
-        if i < len(t_vaf_bins)-2:
+        if i == 0:
+            if mode=="tex":
+                t_vaf_labs.append("VAF $<$ %.2g" % (t_vaf_bins[i+1]))
+            else:
+                t_vaf_labs.append(u"VAF < %.2g" % (t_vaf_bins[i+1]))
+        elif i < len(t_vaf_bins)-2:
             if mode=="tex":
                 t_vaf_labs.append("%.2g $\leq$ VAF $<$ %.2g" % (t_vaf_bins[i], t_vaf_bins[i+1]))
             else:

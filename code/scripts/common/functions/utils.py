@@ -18,11 +18,11 @@ def join_unique(x):
     return "|".join(list(set(x)))
 
 
-def concatenate_cna(df_alt, df_cna, col_gen, col_alt, col_alt_det, col_alt_cat, col_alt_cat_sim, keep_alt_det):
+def concatenate_cna(df_alt, df_cna, col_sam_id, col_gen, col_alt, col_alt_det, col_alt_cat, col_alt_cat_sim):
     if df_cna.shape[0]==0:
         return df_alt
     else:
-        cols_ids = ["Aliquot_Id", "Sample_Id", "Cluster_Id", "Subject_Id",]
+        cols_ids = ["Aliquot_Id", "Sample_Id", "Cluster_Id", "Subject_Id"]
         cols_ids = [x for x in cols_ids if x in df_cna]
 
         cols_det = ["Copy_Number_More", "TCN_EM:LCN_EM"]
@@ -32,47 +32,53 @@ def concatenate_cna(df_alt, df_cna, col_gen, col_alt, col_alt_det, col_alt_cat, 
         mask_del = df_cna["Copy_Number"]==-2
         df_cna.loc[mask_del, col_alt_cat] = "Deletion"
         df_cna.loc[mask_del, col_alt_cat_sim] = "Del"
+        df_cna.loc[mask_del, col_alt] = "Del"
         df_cna.loc[mask_del, col_alt_det] = df_cna.loc[mask_del, cols_det].apply(" - ".join, axis=1)
-        if keep_alt_det:
-            df_cna.loc[mask_del, col_alt] = df_cna.loc[mask_del, col_alt_det]
-        else:
-            df_cna.loc[mask_del, col_alt] = "Del"
 
         mask_amp = df_cna["Copy_Number"]==2
         df_cna.loc[mask_amp, col_alt_cat] = "Amplification"
         df_cna.loc[mask_amp, col_alt_cat_sim] = "Amp"
+        df_cna.loc[mask_amp, col_alt] = "Amp"
         df_cna.loc[mask_amp, col_alt_det] = df_cna.loc[mask_amp, cols_det].apply(" - ".join, axis=1)
-        if keep_alt_det:
-            df_cna.loc[mask_amp, col_alt] = df_cna.loc[mask_amp, col_alt_det]
-        else:
-            df_cna.loc[mask_amp, col_alt] = "Amp"
 
-        return pd.concat((df_alt, df_cna[cols]), axis=0)
+        mask_oth = (~mask_del & ~mask_amp) & (~df_cna["Copy_Number_More"].isnull())
+        df_cna.loc[mask_oth, col_alt_det] = df_cna.loc[mask_oth, cols_det].apply(" - ".join, axis=1)
+        df_cna.loc[mask_oth, col_alt] = df_cna.loc[mask_oth, "Copy_Number_More"]
+        df_cna.loc[mask_oth, col_alt_cat] = "CNA_Other"
+        df_cna.loc[mask_oth, col_alt_cat_sim] = "CNA_Other"
+
+        df_alt = pd.concat((df_alt, df_cna[cols]), axis=0)
+        df_alt = df_alt.drop_duplicates(subset=[col_sam_id, col_gen, col_alt_det], keep="first")
+
+        return df_alt
 
 
-def concatenate_mut(df_alt, df_mut, col_gen, col_alt, col_alt_det, col_alt_cat, col_alt_cat_sim):
+def concatenate_mut(df_alt, df_mut, col_sam_id, col_gen, col_alt, col_alt_det, col_alt_cat, col_alt_cat_sim):
     if df_mut.shape[0]==0:
         return df_alt
     else:
-        cols_ids = ["Aliquot_Id", "Sample_Id", "Cluster_Id", "Subject_Id",]
+        cols_ids = ["Aliquot_Id", "Sample_Id", "Cluster_Id", "Subject_Id"]
         cols_ids = [x for x in cols_ids if x in df_mut]
         cols = cols_ids + [col_gen, "Variant_Classification", col_alt_cat, col_alt_cat_sim, col_alt, col_alt_det,
                            "Annotated", "t_vaf"]
 
         df_mut["Annotated"] = "No"
         df_mut[col_gen] = df_mut["Hugo_Symbol"]
+        get_mut_det = lambda x: re.sub("^p.", "", x["HGVSp_Short"]) if type(x["HGVSp_Short"])==str else x["HGVSc"]
         hgvsp_short_split = lambda x: x.split("p.")[1].replace("%3D", "=") if type(x)==str else x
         exon_split = lambda x: x.split("/")[0] if type(x)==str else ""
+
         mask_ins = df_mut["Variant_Classification"].isin(["Frame_Shift_Ins", "In_Frame_Ins"])
-        mask_del = df_mut["Variant_Classification"].isin(["Frame_Shift_Del", "In_Frame_Del"])
         df_mut.loc[mask_ins, col_alt_cat] = "Indel"
         df_mut.loc[mask_ins, col_alt_cat_sim] = "Mut"
         df_mut.loc[mask_ins, col_alt] = "Exon " + df_mut.loc[mask_ins,"EXON"].apply(exon_split) + " Ins"
-        df_mut.loc[mask_ins, col_alt_det] = df_mut.loc[mask_ins, "HGVSp_Short"].apply(hgvsp_short_split)
+        df_mut.loc[mask_ins, col_alt_det] = df_mut.loc[mask_ins, ["HGVSp_Short", "HGVSc"]].apply(get_mut_det, axis=1)
+
+        mask_del = df_mut["Variant_Classification"].isin(["Frame_Shift_Del", "In_Frame_Del"])
         df_mut.loc[mask_del, col_alt_cat] = "Indel"
         df_mut.loc[mask_del, col_alt_cat_sim] = "Mut"
-        df_mut.loc[mask_del, col_alt_det] = df_mut.loc[mask_del, "HGVSp_Short"].apply(hgvsp_short_split)
         df_mut.loc[mask_del, col_alt] = "Exon " + df_mut.loc[mask_del,"EXON"].apply(exon_split) + " Del"
+        df_mut.loc[mask_del, col_alt_det] = df_mut.loc[mask_del, ["HGVSp_Short", "HGVSc"]].apply(get_mut_det, axis=1)
 
         mask_mut = (~mask_ins) & (~mask_del)
         mask_nul_hgvsp = df_mut["HGVSp_Short"].isnull()
@@ -81,111 +87,65 @@ def concatenate_mut(df_alt, df_mut, col_gen, col_alt, col_alt_det, col_alt_cat, 
         df_mut.loc[mask_mut, col_alt] = df_mut.loc[mask_mut, "HGVSp_Short"].apply(hgvsp_short_split)
         df_mut.loc[mask_mut & mask_nul_hgvsp, col_alt] = \
                 df_mut.loc[mask_mut & mask_nul_hgvsp, "Variant_Classification"]
+        df_mut.loc[mask_mut, col_alt_det] = df_mut.loc[mask_mut, ["HGVSp_Short", "HGVSc"]].apply(get_mut_det, axis=1)
 
-        # for splice, set Alteration to Splice_Site
+        # for splice, set col_alt to Splice_Site
         mask_splice = df_mut["Variant_Classification"]=="Splice_Site"
         df_mut.loc[mask_splice, col_alt] = "Splice_Site"
+        mask_splice = df_mut[col_alt_det].apply(lambda x: "splice" in x if type(x)==str else False)
+        df_mut.loc[mask_splice, col_alt_det] = "Splice_Site"
 
-        return pd.concat((df_alt, df_mut[cols]), axis=0)
+        # fill null col_alt_det
+        mask_null = df_mut[col_alt_det].isnull()
+        df_mut.loc[mask_null, col_alt_det] = df_mut.loc[mask_null, "Variant_Classification"]
+
+        df_alt = pd.concat((df_alt, df_mut[cols]), axis=0)
+        df_alt = df_alt.drop_duplicates(subset=[col_sam_id, col_gen, col_alt_det], keep="first")
+
+        return df_alt
 
 
-def process_alt(df_alt, df_cna, df_mut, samples_all, col_sam_id, col_gen, col_alt, col_alt_det, col_alt_cat,
-                col_alt_cat_sim, col_lvl=None, keep_alt_det=False):
+def process_alt(df_alt, df_cna, df_mut, sam_list, col_sam_id, col_gen, col_alt, col_alt_det, col_alt_cat,
+                col_alt_cat_sim, keep_alt_det=False):
 
     if df_cna is not None:
-        df_cna = df_cna.loc[df_cna[col_sam_id].isin(samples_all)].copy()
+        df_cna = df_cna.loc[df_cna[col_sam_id].isin(sam_list)].copy()
     if df_mut is not None:
-        df_mut = df_mut.loc[df_mut[col_sam_id].isin(samples_all)].copy()
+        df_mut = df_mut.loc[df_mut[col_sam_id].isin(sam_list)].copy()
 
     # concatenate cna
     if df_cna is not None:
-        df_alt = concatenate_cna(df_alt, df_cna, col_gen, col_alt, col_alt_det, col_alt_cat, col_alt_cat_sim,
-                                 keep_alt_det)
+        df_alt = concatenate_cna(df_alt, df_cna, col_sam_id, col_gen, col_alt, col_alt_det, col_alt_cat, col_alt_cat_sim)
 
     # concatenate mut
     if df_mut is not None:
-        df_alt = concatenate_mut(df_alt, df_mut, col_gen, col_alt, col_alt_det, col_alt_cat, col_alt_cat_sim)
+        df_alt = concatenate_mut(df_alt, df_mut, col_sam_id, col_gen, col_alt, col_alt_det, col_alt_cat, col_alt_cat_sim)
 
-    # where col_alt_det is NA, replace the value of col_alt_det by col_alt
-    mask_col_alt_det_na = df_alt[col_alt_det].isnull()
-    df_alt.loc[mask_col_alt_det_na, col_alt_det] = df_alt.loc[mask_col_alt_det_na, col_alt]
+    # there should not be any null col_alt_det
+    assert df_alt[col_alt_det].isnull().sum()==0
 
     # concatenate gene name and alteration
     # for add gene symbol as prefix except for
     #  - alterations that are already equal to gene symbol
-    #  - genes with only "Oncogenic, no Level"
     df_gen_alt = df_alt[[col_gen, col_alt]].drop_duplicates().fillna("NA")
     df_gen_alt_gby = df_gen_alt.groupby(col_gen)[col_alt].agg("|".join)
-    genes_no_lvl_only = df_gen_alt_gby[df_gen_alt_gby=="Oncogenic, no Level"].index.tolist()
-    mask_a = df_alt[col_gen].isin(genes_no_lvl_only)
-    mask_b = (~mask_a) & (df_alt[col_alt] != df_alt[col_gen])
-    df_alt.loc[mask_a,col_alt] = df_alt.loc[mask_a, col_gen]
-    df_alt.loc[mask_b,col_alt] = df_alt.loc[mask_b, [col_gen, col_alt]].apply(lambda x: " ".join(x.dropna()), axis=1)
+    mask_a = (df_alt[col_alt] != df_alt[col_gen])
+    df_alt.loc[mask_a, col_alt] = df_alt.loc[mask_a, [col_gen, col_alt]].apply(lambda x: " ".join(x.dropna()), axis=1)
 
-    # for alterations where alterations is gene + Oncogenic, no Level is only
-    #   - if only 1 alt, replace by alt
-    #   - otherwise, replace by concatenated categories
+    # if don't keep alteration detail, only the gene name is kept unless only 1 alt is associated with the gene,
+    # in which case replace by alt
     if not keep_alt_det:
-        mask_c = df_alt[col_alt] == (df_alt[col_gen] + " Oncogenic, no Level")
-        df_gen_alt_det = df_alt.loc[(~mask_a) & mask_c][[col_gen, col_alt, col_alt_det]].drop_duplicates()
-        df_gen_alt_det_gby = df_gen_alt_det.groupby(col_alt)[col_alt_det].size()
-        alt_1_alt_only = df_gen_alt_det_gby[df_gen_alt_det_gby==1].index.tolist()
-        mask_d = df_alt[col_alt].isin(alt_1_alt_only)
-        df_alt.loc[mask_d,col_alt] = df_alt.loc[mask_d, [col_gen, col_alt_det]].apply(" ".join, axis=1)
-
-        # for alterations that are gene + Oncogenic, no Level or gene,
-        # and for which other alterations from the same gene coexist, 
-        # replace col_alt by col_gene + col_alt_cat (grouped by col_alt)
-        mask_e = (~mask_a) & mask_c & (~mask_d)
-        if sum(mask_e) > 0:
-            col_alt_new = "%s_New" % col_alt
-            df_gen_alt_cat = df_alt.loc[mask_e][[col_gen, col_alt, col_alt_cat_sim]].drop_duplicates()
-            df_gen_alt_cat = df_gen_alt_cat.groupby([col_gen, col_alt]).agg({col_alt_cat_sim: join_unique}).reset_index()
-            df_gen_alt_cat[col_alt_new] = df_gen_alt_cat[[col_gen, col_alt_cat_sim]].apply(" ".join, axis=1)
-
-            df_alt_mask = df_alt.loc[mask_e]
-            df_alt_othr = df_alt.loc[~mask_e]
-            df_alt_mask = df_alt_mask.merge(df_gen_alt_cat[[col_gen, col_alt, col_alt_new]], how="left", on=[col_gen,
-                                                                                                             col_alt])
-            df_alt_mask[col_alt] = df_alt_mask[col_alt_new]
-            del df_alt_mask[col_alt_new]
-            df_alt = pd.concat((df_alt_mask, df_alt_othr))
-
-        # for genes where col alt is gen and not all alterations have the same level,
-        #  - if col alt is only 1 alteration, replace by alteration
-        #  - otherwise replace, by categories concatenate
-        df_gen_lvl = df_alt[[col_gen, col_lvl]].drop_duplicates()
-        df_gen_lvl[col_lvl] = df_gen_lvl[col_lvl].fillna("N/A")
-        df_gen_lvl_gby = df_gen_lvl.groupby(col_gen)[col_lvl].size()
-        genes_one_lvl_only = df_gen_lvl_gby[df_gen_lvl_gby==1].index.tolist()
-        mask_one_lvl = df_alt[col_gen].isin(genes_one_lvl_only)
-        mask_gen = (df_alt[col_gen] == df_alt[col_alt]) & ~(mask_one_lvl) & ~(mask_a)
-        df_gen_alt_det = df_alt.loc[mask_gen][[col_gen, col_alt, col_alt_det]].drop_duplicates()
-        df_gen_alt_det_gby = df_gen_alt_det.groupby(col_alt)[col_alt_det].size()
-        alt_1_alt_only = df_gen_alt_det_gby[df_gen_alt_det_gby==1].index.tolist()
-        mask_f_1 = df_alt[col_alt].isin(alt_1_alt_only) & ~(mask_one_lvl) & ~(mask_a) & mask_gen
-        mask_f_2 = ~(df_alt[col_alt].isin(alt_1_alt_only)) & ~(mask_one_lvl) & ~(mask_a) & mask_gen
-
-        df_alt.loc[mask_f_1,col_alt] = df_alt.loc[mask_f_1, [col_gen, col_alt_det]].apply(" ".join, axis=1)
-        df_alt.loc[mask_f_2,col_alt] = df_alt.loc[mask_f_2, [col_gen, col_alt_cat_sim]].apply(" ".join, axis=1)
-
-        # for genes where col alt is not gen,
-        #  - if col alt is only 1 alteration, replace by alteration
-        df_gen_alt_det = df_alt.loc[~mask_gen][[col_gen, col_alt, col_alt_det]].drop_duplicates()
-        df_gen_alt_det_gby = df_gen_alt_det.groupby(col_alt)[col_alt_det].size()
-        alt_1_alt_only = df_gen_alt_det_gby[df_gen_alt_det_gby==1].index.tolist()
-        mask_g = df_alt[col_alt].isin(alt_1_alt_only)
-        df_alt.loc[mask_g,col_alt] = df_alt.loc[mask_g, [col_gen, col_alt_det]].apply(" ".join, axis=1)
-
-    # drop duplicated alterations, priotirizing Annotated=="Yes"
-    df_alt = df_alt.drop_duplicates(subset=[col_sam_id, col_alt], keep="first").copy()
+        df_gen_alt = df_alt[[col_gen, col_alt]].drop_duplicates()
+        df_gen_alt_gby = df_gen_alt.groupby(col_gen).size()
+        gen_1_alt_only = df_gen_alt_gby[df_gen_alt_gby==1].index.tolist()
+        mask_1_alt_only = df_alt[col_gen].isin(gen_1_alt_only)
+        df_alt.loc[~mask_1_alt_only,col_alt] = df_alt.loc[~mask_1_alt_only, col_gen]
 
     return df_alt
 
 
 def combine_all_alterations(alt, cln, cna, mut, col_gen, col_alt, col_alt_det, col_alt_cat, col_sub_id, col_sam_id,
-                            col_lvl=None, subs=None, samples_select="all", keep_alt_det=False,
-                            high_level_cnas_only=True, select_keep_cln=True):
+                            subs=None, samples_select="all", keep_alt_det=False, cna_selection="focal_all"):
 
     # get data
     df_alt = pd.read_table(alt)
@@ -199,10 +159,19 @@ def combine_all_alterations(alt, cln, cna, mut, col_gen, col_alt, col_alt_det, c
 
     if cna is not None:
         df_cna = pd.read_table(cna)
-        if high_level_cnas_only:
+        if cna_selection=="focal_high_level":
             mask_keep = ~df_cna["Copy_Number"].isnull()
             df_cna = df_cna.loc[mask_keep].copy()
-            print("-retained %d/%d CNAs that are -2 or +2" % (sum(mask_keep), mask_keep.shape[0]))
+            print("-retained %d/%d CNAs that are focal and HL/ML or HD" % (sum(mask_keep), mask_keep.shape[0]))
+        elif cna_selection=="focal_non_neutral":
+            mask_keep = ~df_cna["Copy_Number_More"].isnull()
+            df_cna = df_cna.loc[mask_keep].copy()
+            print("-retained %d/%d CNAs that are focal and non-neutral" % (sum(mask_keep), mask_keep.shape[0]))
+        elif cna_selection=="focal_all":
+            print("-retained all %d focal CNAs (some may be neutral)" % df_cna.shape[0])
+        else:
+            choices = ["focal_high_level", "focal_non_neutral", "focal_all"]
+            raise ValueError("Unknown value '%s' for cna_selection. Choose one of: %s" % (cna_selection, choices))
     else:
         df_cna = None
 
@@ -212,7 +181,8 @@ def combine_all_alterations(alt, cln, cna, mut, col_gen, col_alt, col_alt_det, c
     else:
         df_mut = None
 
-    # add Sample_Id to all tables
+    # add Sample_Id to all tables and select only samples that pass QC unless specified otherwise by the user
+    df_cln = df_cln.loc[df_cln["QC_Final_Decision"]==1]
     col_tsb = "Tumor_Sample_Barcode"
     col_nsb = "Matched_Norm_Sample_Barcode"
     df_cln["Sample_Id"] = df_cln["Sample_Id_DNA_T"]
@@ -221,19 +191,16 @@ def combine_all_alterations(alt, cln, cna, mut, col_gen, col_alt, col_alt_det, c
 
     if df_cna is not None:
         df_cna["Cluster_Id_DNA_P"] = df_cna[[col_tsb, col_nsb]].fillna("NA").apply("_vs_".join, axis=1)
+        df_cna = df_cna.loc[df_cna["Cluster_Id_DNA_P"].isin(df_cln["Cluster_Id_DNA_P"])].copy()
         df_cna = df_cna.merge(df_cln[cols_cln], how="left", on="Cluster_Id_DNA_P")
 
     if df_mut is not None:
         df_mut["Cluster_Id_DNA_P"] = df_mut[[col_tsb, col_nsb]].fillna("NA").apply("_vs_".join, axis=1)
+        df_mut = df_mut.loc[df_mut["Cluster_Id_DNA_P"].isin(df_cln["Cluster_Id_DNA_P"])].copy()
         df_mut = df_mut.merge(df_cln[cols_cln], how="left", on="Cluster_Id_DNA_P")
 
         # for mut, add t_vaf
         df_mut["t_vaf"] = df_mut["t_alt_count"]/df_mut["t_depth"]
-
-
-    # select only samples that pass QC unless specified otherwise by the user
-    if select_keep_cln:
-        df_cln = df_cln.loc[df_cln["QC_Final_Decision"]==1]
 
     # select samples
     mask_t1 = df_cln["Sample_Id_DNA_T"].str.endswith("T1").fillna(False)
@@ -273,28 +240,28 @@ def combine_all_alterations(alt, cln, cna, mut, col_gen, col_alt, col_alt_det, c
             raise ValueError("-unsupported type for subs")
 
     # samples selection
-    samples_all = df_cln[col_sam_id].tolist()
+    sam_list = df_cln[col_sam_id].tolist()
 
     # combined annotated and not annotated events
     df_alt["Annotated"] = "Yes"
-    df_alt = df_alt.loc[df_alt[col_sam_id].isin(samples_all)].copy()
-    if keep_alt_det:
-        # where col_alt_det is not NA, replace the value of col_alt by col_alt_det
-        # # exception: for Amplification and Deletion, ignore col_alt_det
-        # mask_amp_del = df_alt["Alteration_Category"].isin(["Amplification", "Deletion"])
-        # df_alt.loc[mask_amp_del, col_alt_det] = np.nan
-        mask_alt_det_nna = ~df_alt[col_alt_det].isnull()
-        df_alt.loc[mask_alt_det_nna, col_alt] = df_alt.loc[mask_alt_det_nna, col_alt_det]
+    df_alt = df_alt.loc[df_alt[col_sam_id].isin(sam_list)].copy()
+    # if keep_alt_det:
+    #     # where col_alt_det is not NA, replace the value of col_alt by col_alt_det
+    #     # # exception: for Amplification and Deletion, ignore col_alt_det
+    #     # mask_amp_del = df_alt["Alteration_Category"].isin(["Amplification", "Deletion"])
+    #     # df_alt.loc[mask_amp_del, col_alt_det] = np.nan
+    #     mask_alt_det_nna = ~df_alt[col_alt_det].isnull()
+    #     df_alt.loc[mask_alt_det_nna, col_alt] = df_alt.loc[mask_alt_det_nna, col_alt_det]
 
     # process alterations
-    df_alt = process_alt(df_alt, df_cna, df_mut, samples_all, col_sam_id, col_gen, col_alt, col_alt_det, col_alt_cat,
-                         col_alt_cat_sim, col_lvl, keep_alt_det)
+    df_alt = process_alt(df_alt, df_cna, df_mut, sam_list, col_sam_id, col_gen, col_alt, col_alt_det, col_alt_cat,
+                         col_alt_cat_sim, keep_alt_det)
 
     return df_alt, df_cln
 
 
-def combine_tcga_alterations(cln, cna, mut, col_gen, col_alt, col_alt_det, col_alt_cat, col_lvl, col_sub_id,
-                             col_sam_id, keep_alt_det=False):
+def combine_tcga_alterations(cln, cna, mut, col_gen, col_alt, col_alt_det, col_alt_cat, col_sub_id,
+                             col_sam_id, keep_alt_det=False, cna_selection="focal_all"):
 
     col_alt_cat_sim = "%s_Simple " % col_alt_cat
     df_alt = pd.DataFrame()
@@ -306,12 +273,24 @@ def combine_tcga_alterations(cln, cna, mut, col_gen, col_alt, col_alt_det, col_a
     # load cna
     if cna is not None:
         df_cna = pd.read_table(cna)
-        mask_keep = ~df_cna["Copy_Number"].isnull()
-        df_cna = df_cna.loc[mask_keep].copy()
-        print("-retained %d/%d CNAs that are -2 or +2" % (sum(mask_keep), mask_keep.shape[0]))
         df_cna[col_sub_id] = df_cna["Tumor_Sample_Barcode"].str[:12]
         df_cna[col_sam_id] = df_cna["Tumor_Sample_Barcode"]
         df_ids_cna = pd.read_table(os.path.join(os.path.dirname(cna), "sample_list.tsv"))
+
+        if cna_selection=="focal_high_level":
+            mask_keep = ~df_cna["Copy_Number"].isnull()
+            df_cna = df_cna.loc[mask_keep].copy()
+            print("-retained %d/%d CNAs that are focal and HL/ML or HD" % (sum(mask_keep), mask_keep.shape[0]))
+        elif cna_selection=="focal_non_neutral":
+            mask_keep = ~df_cna["Copy_Number_More"].isnull()
+            df_cna = df_cna.loc[mask_keep].copy()
+            print("-retained %d/%d CNAs that are focal and non-neutral" % (sum(mask_keep), mask_keep.shape[0]))
+        elif cna_selection=="focal_all":
+            print("-retained all %d focal CNAs (some may be neutral)" % df_cna.shape[0])
+        else:
+            choices = ["focal_high_level", "focal_non_neutral", "focal_all"]
+            raise ValueError("Unknown value '%s' for cna_selection. Choose one of: %s" % (cna_selection, choices))
+
     else:
         df_cna = None
 
@@ -327,22 +306,22 @@ def combine_tcga_alterations(cln, cna, mut, col_gen, col_alt, col_alt_det, col_a
         df_mut = None
 
     # select ids common to cln, mut, cna
-    samples_all = df_cln[col_sam_id].unique().tolist()
+    sam_list = df_cln[col_sam_id].unique().tolist()
 
     if df_cna is not None:
-        df_cna = df_cna.loc[df_cna[col_sam_id].isin(samples_all)].copy()
-        samples_all = list(set(samples_all).intersection(set(df_ids_cna["Tumor_%s" % col_sam_id])))
+        df_cna = df_cna.loc[df_cna[col_sam_id].isin(sam_list)].copy()
+        sam_list = list(set(sam_list).intersection(set(df_ids_cna["Tumor_%s" % col_sam_id])))
     if df_mut is not None:
-        df_mut = df_mut.loc[df_mut[col_sam_id].isin(samples_all)].copy()
-        samples_all = list(set(samples_all).intersection(set(df_ids_mut["Tumor_%s" % col_sam_id])))
+        df_mut = df_mut.loc[df_mut[col_sam_id].isin(sam_list)].copy()
+        sam_list = list(set(sam_list).intersection(set(df_ids_mut["Tumor_%s" % col_sam_id])))
 
     # filter on common samples
-    mask_keep = df_cln[col_sam_id].isin(samples_all)
+    mask_keep = df_cln[col_sam_id].isin(sam_list)
     print("-retained %d/%d patients with all data available" % (sum(mask_keep), mask_keep.shape[0]))
     df_cln = df_cln.loc[mask_keep].copy()
 
     # process alterations
-    df_alt = process_alt(df_alt, df_cna, df_mut, samples_all, col_sam_id, col_gen, col_alt, col_alt_det, col_alt_cat,
-                         col_alt_cat_sim, col_lvl, keep_alt_det)
+    df_alt = process_alt(df_alt, df_cna, df_mut, sam_list, col_sam_id, col_gen, col_alt, col_alt_det, col_alt_cat,
+                         col_alt_cat_sim, keep_alt_det)
 
     return df_alt, df_cln

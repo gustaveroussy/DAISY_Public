@@ -1,5 +1,5 @@
 # @created: 05 Jan 2023
-# @modified: 05 Jan 2023
+# @modified: 06 Jun 2023
 # @author: Yoann Pradat
 #
 # This pipeline combines alterations (mutations, copy-number) annotated in OncoKB (https://www.oncokb.org/)
@@ -20,8 +20,8 @@ rule all:
         expand("%s/oncoplot/oncoplot_samples_{select}.pdf" % R_FOLDER, select=["all", "t1"]),
         expand("%s/oncoplot/oncoplot_subject_{subject}_{mode_amp}.pdf" % R_FOLDER,
             subject=["DAISY-109", "DAISY-173"], mode_amp=["wo_amp", "w_amp"]),
-        expand("%s/oncoplot/oncoplot_t1vst2_diff_per_{alt_lvl}_{agg_mod}.pdf" % R_FOLDER,
-            alt_lvl=["gen","pth"], agg_mod=["v1", "v2", "v3"])
+        expand("%s/oncoplot/oncoplot_t1vst2_diff_per_{alt_lvl}_{agg_mod}_{sel_mod}_{vaf_inc}.pdf" % R_FOLDER,
+            alt_lvl=["gen","pth"], agg_mod=["v1", "v2", "v3"], sel_mod=["A","B"], vaf_inc=[0.2, 1])
 
 ##### Modules #####
 

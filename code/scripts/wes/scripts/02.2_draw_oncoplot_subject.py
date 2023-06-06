@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 @created: May 02 2022
-@modified: Jan 06 2023
+@modified: Jun 06 2023
 @author: Yoann Pradat
 
     CentraleSupelec
@@ -39,24 +39,29 @@ from utils_comut import get_tables, get_mappings, draw_comut_plot
 
 def main(args):
     # define util variable names
-    col_lvl = "Sen_Level_Simple"
     col_gen = "Hugo_Symbol"
     col_alt = "Alteration"
-    col_alt_det = "Alteration_Detail"
     col_alt_cat = "Alteration_Category"
+    col_alt_det = "Alteration_Detail"
     col_sub_id = "Subject_Id"
     col_sam_id = "Sample_Id"
     col_t_vaf = "t_vaf"
-    plt.rcParams['text.usetex'] = False
+    font_mode = "not_tex"
+
+
+    if font_mode=="tex":
+        plt.rcParams['text.usetex'] = True
+    else:
+        plt.rcParams['text.usetex'] = False
 
     df_cln = pd.read_table(args.cln)
-    df_cln = df_cln.loc[df_cln["Keep"]==1]
+    df_cln = df_cln.loc[df_cln["QC_Final_Decision"]==1]
     df_cln_cnt = df_cln.groupby(col_sub_id)["Biopsy_Number"].nunique()
 
-    df_alt, df_cln = combine_all_alterations(alt=args.alt, cna=args.cna, mut=args.mut, cln=args.cln,
+    df_alt, df_cln = combine_all_alterations(alt=args.alt, cln=args.cln, cna=args.cna, mut=args.mut,
                                              col_gen=col_gen, col_alt=col_alt, col_alt_det=col_alt_det,
                                              col_alt_cat=col_alt_cat, col_sub_id=col_sub_id, col_sam_id=col_sam_id,
-                                             col_lvl=col_lvl, subs=args.subject, select_keep_cln=False)
+                                             subs=args.subject, keep_alt_det=True, cna_selection="focal_high_level")
 
     # parameters for the plot 
     cols_comut = ["sample", "category", "value"]
@@ -120,7 +125,7 @@ def main(args):
 # run ==================================================================================================================
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Oncoplot-like figure detailing treatment resistances.")
+    parser = argparse.ArgumentParser(description="Oncoplot with alterations in all samples of one patient.")
     parser.add_argument("--cln", type=str, help="Path to input curated clincal table.")
     parser.add_argument('--alt', type=str, help='Path to table of alterations.')
     parser.add_argument('--mut', type=str, help='Path to table of all mutations.')

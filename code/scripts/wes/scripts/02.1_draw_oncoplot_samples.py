@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 @created: May 02 2022
-@modified: Feb 27 2023
+@modified: Jun 05 2023
 @author: Yoann Pradat
 
     CentraleSupelec
@@ -34,11 +34,10 @@ from statsmodels.sandbox.stats.multicomp import multipletests
 
 def main(args):
     # define util variable names
-    col_lvl = "Sen_Level_Simple"
-    col_gen = "Hugo_Symbol_%s" % col_lvl
-    col_alt = "Alteration_%s" % col_lvl
+    col_gen = "Hugo_Symbol"
+    col_alt = "Alteration"
     col_alt_cat = "Alteration_Category"
-    col_alt_det = "Alteration"
+    col_alt_det = "Alteration_Detail"
     col_sub_id = "Subject_Id"
     col_sam_id = "Sample_Id"
     col_t_vaf = "t_vaf"
@@ -52,7 +51,7 @@ def main(args):
     # load data
     df_alt, df_cln = combine_all_alterations(alt=args.alt, cln=args.cln, cna=None, mut=None, col_gen=col_gen,
                                              col_alt=col_alt, col_alt_det=col_alt_det, col_alt_cat=col_alt_cat,
-                                             col_lvl=col_lvl, col_sub_id=col_sub_id, col_sam_id=col_sam_id, subs=None,
+                                             col_sub_id=col_sub_id, col_sam_id=col_sam_id, subs=None,
                                              samples_select=args.samples_select, keep_alt_det=False)
 
     # special cases
@@ -111,7 +110,7 @@ def main(args):
     # draw figure
     if args.samples_select in ["all", "t1t2"]:
         sample_indicators = True
-        stacked_bar_side = True
+        stacked_bar_side = False
         show_legend_cohorts = True
     else:
         sample_indicators = False
@@ -125,7 +124,7 @@ def main(args):
                                 sample_indicators=sample_indicators, height_middle=height_middle, height_top=height_top,
                                 stacked_bar_side=stacked_bar_side, labels_orders=labels_orders,
                                 ignored_values=ignored_values, label_bar_top_fontsize=16, label_bar_side_fontsize=16,
-                                show_legend_cohorts=show_legend_cohorts, unit_width=0.25, unit_height=0.20)
+                                show_legend_cohorts=show_legend_cohorts, unit_width=0.2, unit_height=0.20)
 
     # save figure
     fig = comut_alt.figure
@@ -181,7 +180,7 @@ if __name__ == "__main__":
                         help='Only alterations with a frequency of at least this value will be displayed')
     parser.add_argument('--samples_select', type=str, default="t1", help='Choose "all", "t1" or "t1t2".')
     parser.add_argument('--output', type=str,  help='Paths to output oncoplot-like.')
-    parser.add_argument('--output_tests', type=str,
+    parser.add_argument('--output_tests', type=str, nargs="*",
                         help='Paths to output tables of tests of associations with clinical response.')
     args = parser.parse_args()
 
