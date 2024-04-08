@@ -180,7 +180,7 @@ if __name__ == "__main__":
                         help='Only alterations with a frequency of at least this value will be displayed')
     parser.add_argument('--samples_select', type=str, default="t1", help='Choose "all", "t1" or "t1t2".')
     parser.add_argument('--output', type=str,  help='Paths to output oncoplot-like.')
-    parser.add_argument('--output_tests', type=str, nargs="*",
+    parser.add_argument('--output_tests', type=str,
                         help='Paths to output tables of tests of associations with clinical response.')
     args = parser.parse_args()
 
